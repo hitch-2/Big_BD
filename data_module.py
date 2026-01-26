@@ -5,6 +5,7 @@ import os
 
 CACHE_PATH = "cache/data_cache.pkl"
 
+
 class DataManager:
     def __init__(self, mongo_uri, db_name, collection_name):
         self.client = MongoClient(mongo_uri)
@@ -13,8 +14,7 @@ class DataManager:
 
     def load_from_db(self):
         data = list(self.collection.find({}, {"_id": 0}))
-        df = pd.DataFrame(data)
-        return df
+        return pd.DataFrame(data)
 
     def save_to_cache(self, df):
         os.makedirs("cache", exist_ok=True)
@@ -29,9 +29,9 @@ class DataManager:
 
     def get_data(self, use_cache=True):
         if use_cache:
-            cached_data = self.load_from_cache()
-            if cached_data is not None:
-                return cached_data
+            cached = self.load_from_cache()
+            if cached is not None:
+                return cached
 
         df = self.load_from_db()
         self.save_to_cache(df)
