@@ -13,15 +13,18 @@ class DataManager:
         self.collection = self.db[collection_name]
 
     def load_from_db(self):
+        print("Loading data from MongoDB...")
         data = list(self.collection.find({}, {"_id": 0}))
         return pd.DataFrame(data)
 
     def save_to_cache(self, df):
+        print("Saving data to cache...")
         os.makedirs("cache", exist_ok=True)
         with open(CACHE_PATH, "wb") as f:
             pickle.dump(df, f)
 
     def load_from_cache(self):
+        print("Loading data from cache...")
         if not os.path.exists(CACHE_PATH):
             return None
         with open(CACHE_PATH, "rb") as f:
