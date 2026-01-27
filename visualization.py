@@ -30,7 +30,11 @@ class App(tk.Tk):
     def show_main_menu(self):
         self.clear()
 
+        grid = tk.Frame(self.container)
+        grid.pack(expand=True)
+
         buttons = [
+            ("Дэшборд", self.show_dashboard),
             ("Столбчатая диаграмма", self.show_bar),
             ("Линейный график", self.show_line),
             ("Спарклайн", self.show_sparkline),
@@ -38,9 +42,21 @@ class App(tk.Tk):
             ("Круговая диаграмма", self.show_pie),
         ]
 
-        for text, command in buttons:
-            btn = ttk.Button(self.container, text=text, command=command)
-            btn.pack(pady=20, ipadx=30, ipady=10)
+        for i, (text, cmd) in enumerate(buttons):
+            btn = ttk.Button(
+                grid,
+                text=text,
+                command=cmd
+            )
+            btn.grid(
+                row=i // 3,
+                column=i % 3,
+                padx=40,
+                pady=40,
+                ipadx=40,
+                ipady=30
+            )
+
 
     def back_button(self):
         ttk.Button(
@@ -117,48 +133,100 @@ class App(tk.Tk):
 
     # ---------- СПАРКЛАЙН ----------
 
-    def show_sparkline(self):
-        self.clear()
+def show_sparkline(self):  
+    self.clear()
 
-        fig = Figure(figsize=(10, 3))
-        ax = fig.add_subplot(111)
+    fig = Figure(figsize=(10, 4))
+    ax = fig.add_subplot(111)
 
-        df_sorted = self.df.sort_values("date")
-        ax.plot(df_sorted["value"])
-        ax.axis("off")
+    canvas = FigureCanvasTkAgg(fig, self.container)
+    canvas.get_tk_widget().pack(fill="both", expand=True)
 
-        canvas = FigureCanvasTkAgg(fig, master=self.container)
+    df_sorted = self.df.sort_values("date")
+    values = df_sorted["value"].tolist()
+
+    selected = []
+
+    def redraw():
+        ax.clear()
+        if len(selected) == 2:
+            v1, v2 = selected
+            ax.plot(v1, linewidth=2)
+            ax.plot(v2, linewidth=2)
+
+            for i in range(len(v1)):
+                if v1[i] >= v2[i]:
+                    ax.fill_between(
+                        [i, i],
+                        v1[i],
+                        v2[i],
+                        color="green",
+                        alpha=0.3
+                    )
+                else:
+                    ax.fill_between(
+                        [i, i],
+                        v1[i],
+                        v2[i],
+                        color="red",
+                        alpha=0.3)
+
+            ax.axis("off")
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True)
 
-        self.back_button()
+    table = tk.Frame(self.container)
+    table.pack(pady=10)
+
+    for i, val in enumerate(values):
+        var = tk.BooleanVar()
+
+        def toggle(v=values, idx=i, var=var):
+            if var.get():
+                selected.append(v)
+            else:
+                selected.remove(v)
+            if len(selected) > 2:
+                var.set(False)
+                selected.pop()
+            redraw()
+
+        chk = ttk.Checkbutton(
+            table,
+            text=f"Значение {i + 1}: {val}",
+            variable=var,
+            command=toggle
+        )
+        chk.pack(anchor="w")
+
+    self.back_button()
+
 
     # ---------- СВОДНАЯ ТАБЛИЦА ----------
 
     def show_table(self):
         self.clear()
 
-        pivot = pd.pivot_table(
-            self.df,
-            values="value",
-            index="category",
-            aggfunc="sum"
+    tree = ttk.Treeview(
+        self.container,
+        columns=("date", "category", "value"),
+        show="headings"
+    )
+
+    tree.heading("date", text="Дата")
+    tree.heading("category", text="Категория")
+    tree.heading("value", text="Значение")
+
+    for _, row in self.df.iterrows():
+        tree.insert(
+            "",
+            "end",
+            values=(row["date"], row["category"], row["value"])
         )
 
-        tree = ttk.Treeview(
-            self.container,
-            columns=("category", "value"),
-            show="headings"
-        )
-        tree.heading("category", text="Категория")
-        tree.heading("value", text="Сумма")
+    tree.pack(fill="both", expand=True)
 
-        for cat, row in pivot.iterrows():
-            tree.insert("", "end", values=(cat, row["value"]))
+    self.back_button()
 
-        tree.pack(fill="both", expand=True)
-
-        self.back_button()
 
     # ---------- КРУГОВАЯ ДИАГРАММА ----------
 
@@ -190,3 +258,35 @@ if __name__ == "__main__":
     df = manager.get_data()
     app = App(df)
     app.mainloop()
+
+    def show_dashboard(self):
+        self.clear()
+
+        fig = Figure(figsize=(14, 8))
+
+        ax1 = fig.add_subplot(221)
+        ax2 = fig.add_subplot(222)
+        ax3 = fig.add_subplot(223)
+        ax4 = fig.add_subplot(224)
+
+        grouped = self.df.groupby("category")["value"].sum()
+        grouped.plot(kind="bar", ax=ax1, title="Bar")
+
+        df_sorted = self.df.sort_values("date")
+        for cat in df_sorted["category"].unique():
+            data = df_sorted[df_sorted["category"] == cat]
+            ax2.plot(data["date"], data["value"])
+        ax2.set_title("Line")
+
+        ax3.plot(df_sorted["value"])
+        ax3.axis("off")
+        ax3.set_title("Sparkline")
+
+        ax4.pie(grouped.values, labels=grouped.index)
+        ax4.set_title("Pie")
+
+        canvas = FigureCanvasTkAgg(fig, self.container)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        self.back_button()
