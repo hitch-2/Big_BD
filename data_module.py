@@ -40,7 +40,11 @@ class DataManager:
         with open(CACHE_PATH, "rb") as f:
             payload = pickle.load(f)
 
-        return payload["data"], payload["timestamp"]
+        if isinstance(payload, dict):
+            return payload.get("data"), payload.get("timestamp")
+        else:
+            # Legacy format: just the DataFrame
+            return payload, None
 
     def get_data(self):
         cached_df, cached_time = self.load_from_cache()
@@ -55,7 +59,11 @@ class DataManager:
                 raise RuntimeError("Нет доступа к БД и отсутствует кэш")
 
         # если кэш есть — проверяем TTL
-        cache_age = time.time() - cached_time
+        if cached_time is None:
+            cache_age = CACHE_TTL_SECONDS + 1  # Force reload for legacy cache
+        else:
+            cache_age = time.time() - cached_time
+        
         if cache_age < CACHE_TTL_SECONDS:
             return cached_df
 

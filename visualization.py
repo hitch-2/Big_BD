@@ -57,7 +57,6 @@ class App(tk.Tk):
                 ipady=30
             )
 
-
     def back_button(self):
         ttk.Button(
             self.container,
@@ -133,100 +132,98 @@ class App(tk.Tk):
 
     # ---------- СПАРКЛАЙН ----------
 
-def show_sparkline(self):  
-    self.clear()
+    def show_sparkline(self):
+        self.clear()
 
-    fig = Figure(figsize=(10, 4))
-    ax = fig.add_subplot(111)
+        fig = Figure(figsize=(10, 4))
+        ax = fig.add_subplot(111)
 
-    canvas = FigureCanvasTkAgg(fig, self.container)
-    canvas.get_tk_widget().pack(fill="both", expand=True)
+        canvas = FigureCanvasTkAgg(fig, self.container)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    df_sorted = self.df.sort_values("date")
-    values = df_sorted["value"].tolist()
+        df_sorted = self.df.sort_values("date")
+        values = df_sorted["value"].tolist()
 
-    selected = []
+        selected = []
 
-    def redraw():
-        ax.clear()
-        if len(selected) == 2:
-            v1, v2 = selected
-            ax.plot(v1, linewidth=2)
-            ax.plot(v2, linewidth=2)
+        def redraw():
+            ax.clear()
+            if len(selected) == 2:
+                v1, v2 = selected
+                ax.plot(v1, linewidth=2)
+                ax.plot(v2, linewidth=2)
 
-            for i in range(len(v1)):
-                if v1[i] >= v2[i]:
-                    ax.fill_between(
-                        [i, i],
-                        v1[i],
-                        v2[i],
-                        color="green",
-                        alpha=0.3
-                    )
+                for i in range(len(v1)):
+                    if v1[i] >= v2[i]:
+                        ax.fill_between(
+                            [i, i],
+                            v1[i],
+                            v2[i],
+                            color="green",
+                            alpha=0.3
+                        )
+                    else:
+                        ax.fill_between(
+                            [i, i],
+                            v1[i],
+                            v2[i],
+                            color="red",
+                            alpha=0.3)
+
+                ax.axis("off")
+            canvas.draw()
+
+        table = tk.Frame(self.container)
+        table.pack(pady=10)
+
+        for i, val in enumerate(values):
+            var = tk.BooleanVar()
+
+            def toggle(v=values, idx=i, var=var):
+                if var.get():
+                    selected.append(v)
                 else:
-                    ax.fill_between(
-                        [i, i],
-                        v1[i],
-                        v2[i],
-                        color="red",
-                        alpha=0.3)
+                    selected.remove(v)
+                if len(selected) > 2:
+                    var.set(False)
+                    selected.pop()
+                redraw()
 
-            ax.axis("off")
-        canvas.draw()
+            chk = ttk.Checkbutton(
+                table,
+                text=f"Значение {i + 1}: {val}",
+                variable=var,
+                command=toggle
+            )
+            chk.pack(anchor="w")
 
-    table = tk.Frame(self.container)
-    table.pack(pady=10)
-
-    for i, val in enumerate(values):
-        var = tk.BooleanVar()
-
-        def toggle(v=values, idx=i, var=var):
-            if var.get():
-                selected.append(v)
-            else:
-                selected.remove(v)
-            if len(selected) > 2:
-                var.set(False)
-                selected.pop()
-            redraw()
-
-        chk = ttk.Checkbutton(
-            table,
-            text=f"Значение {i + 1}: {val}",
-            variable=var,
-            command=toggle
-        )
-        chk.pack(anchor="w")
-
-    self.back_button()
-
+        self.back_button()
 
     # ---------- СВОДНАЯ ТАБЛИЦА ----------
 
     def show_table(self):
         self.clear()
 
-    tree = ttk.Treeview(
-        self.container,
-        columns=("date", "category", "value"),
-        show="headings"
-    )
-
-    tree.heading("date", text="Дата")
-    tree.heading("category", text="Категория")
-    tree.heading("value", text="Значение")
-
-    for _, row in self.df.iterrows():
-        tree.insert(
-            "",
-            "end",
-            values=(row["date"], row["category"], row["value"])
+        tree = ttk.Treeview(
+            self.container,
+            columns=("date", "category", "value"),
+            show="headings"
         )
 
-    tree.pack(fill="both", expand=True)
+        tree.heading("date", text="Дата")
+        tree.heading("category", text="Категория")
+        tree.heading("value", text="Значение")
 
-    self.back_button()
+        for _, row in self.df.iterrows():
+            tree.insert(
+                "",
+                "end",
+                values=(row["date"], row["category"], row["value"])
+            )
 
+        tree.pack(fill="both", expand=True)
+
+        self.back_button()
 
     # ---------- КРУГОВАЯ ДИАГРАММА ----------
 
@@ -245,19 +242,7 @@ def show_sparkline(self):
 
         self.back_button()
 
-
-# ---------- ТОЧКА ВХОДА ----------
-
-if __name__ == "__main__":
-    manager = DataManager(
-        mongo_uri="mongodb+srv://abi:bkCVTo9fgYvhQN23@cluster0.gs3dt6o.mongodb.net/?authSource=admin",
-        db_name="analytics_db",
-        collection_name="sales_data"
-    )
-
-    df = manager.get_data()
-    app = App(df)
-    app.mainloop()
+    # ---------- ДЭШБОРД ----------
 
     def show_dashboard(self):
         self.clear()
@@ -290,3 +275,17 @@ if __name__ == "__main__":
         canvas.get_tk_widget().pack(fill="both", expand=True)
 
         self.back_button()
+
+
+# ---------- ТОЧКА ВХОДА ----------
+
+if __name__ == "__main__":
+    manager = DataManager(
+        mongo_uri="mongodb+srv://abi:bkCVTo9fgYvhQN23@cluster0.gs3dt6o.mongodb.net/?authSource=admin",
+        db_name="analytics_db",
+        collection_name="sales_data"
+    )
+
+    df = manager.get_data()
+    app = App(df)
+    app.mainloop()
