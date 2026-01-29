@@ -211,18 +211,31 @@ class App(tk.Tk):
     def show_dashboard(self):
         self.clear()
 
-        canvas = tk.Canvas(self.container)
-        canvas.pack(fill="both", expand=True)
+        main_frame = ttk.Frame(self.container)
+        main_frame.pack(fill="both", expand=True)
 
-        scroll = ttk.Scrollbar(self.container, orient="vertical", command=canvas.yview)
-        scroll.pack(side="right", fill="y")
+        canvas = tk.Canvas(main_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
 
-        canvas.configure(yscrollcommand=scroll.set)
-        frame = tk.Frame(canvas)
-        canvas.create_window((0, 0), window=frame, anchor="nw")
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Binding mouse wheel
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         def block(title):
-            box = ttk.LabelFrame(frame, text=title)
+            box = ttk.LabelFrame(scrollable_frame, text=title)
             box.pack(fill="x", padx=20, pady=15)
             return box
 
@@ -231,9 +244,6 @@ class App(tk.Tk):
         self._mini_spark(block("Sparkline"))
         self._mini_pie(block("Pie"))
         self._mini_table(block("Table"))
-
-        frame.update_idletasks()
-        canvas.config(scrollregion=canvas.bbox("all"))
 
         self.back_button()
 
