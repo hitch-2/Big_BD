@@ -218,12 +218,19 @@ class App(tk.Tk):
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, style="TFrame")
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        # create window and keep its width equal to canvas width to avoid horizontal scrolling
+        canvas_window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        def on_scrollable_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def on_canvas_configure(event):
+            # make inner frame width match canvas width (prevents horizontal scroll)
+            canvas.itemconfig(canvas_window_id, width=event.width)
+
+        scrollable_frame.bind("<Configure>", on_scrollable_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
+
         canvas.configure(yscrollcommand=scrollbar.set, bg="#f5f6f7")
 
         canvas.pack(side="left", fill="both", expand=True)
@@ -233,53 +240,42 @@ class App(tk.Tk):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-        # Grid layout с 3 колонками, аккуратные размеры для фигур
+        # Grid layout с 2 колонками — убрано первое большое окно, всё в пределах одной ширины
         grid = ttk.Frame(scrollable_frame)
         grid.pack(fill="both", expand=True, padx=12, pady=12)
 
-        # Row 0: большой тренд (слева, span 2) + круговая справа
-        left_big = self._create_box(grid, "Общий тренд")
-        left_big.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
-        fig_big = Figure(figsize=(10, 3), tight_layout=True)
-        ax_big = fig_big.add_subplot(111)
-        df_sorted = self.df.sort_values("date")
-        ax_big.plot(df_sorted["date"], df_sorted["value"], color="#4C8BF5")
-        ax_big.set_title("Общая динамика")
-        ax_big.tick_params(axis="x", labelrotation=25)
-        canvas_big = FigureCanvasTkAgg(fig_big, left_big)
-        canvas_big.get_tk_widget().pack(fill="both", expand=True)
+        # Row 0: линейный по категориям (лево) + круговая (право)
+        box_line = self._create_box(grid, "Линейный по категориям")
+        box_line.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self._mini_line(box_line)
 
         right_pie = self._create_box(grid, "Распределение по категориям")
-        right_pie.grid(row=0, column=2, sticky="nsew", padx=6, pady=6)
-        fig_p = Figure(figsize=(3.5, 3), tight_layout=True)
+        right_pie.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        fig_p = Figure(figsize=(4, 3), tight_layout=True)
         ax_p = fig_p.add_subplot(111)
         g = self.df.groupby("category")["value"].sum()
         ax_p.pie(g.values, labels=g.index, autopct="%1.0f%%", textprops={"fontsize": 8})
         canvas_p = FigureCanvasTkAgg(fig_p, right_pie)
         canvas_p.get_tk_widget().pack(fill="both", expand=True)
 
-        # Row 1: три мини-графика
-        box_line = self._create_box(grid, "Линейный по категориям")
-        box_line.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
-        self._mini_line(box_line)
-
+        # Row 1: три мини-графика (в две колонки — spark и bar)
         box_spark = self._create_box(grid, "Сравнение (спарклайн)")
-        box_spark.grid(row=1, column=1, sticky="nsew", padx=6, pady=6)
+        box_spark.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
         self._mini_spark(box_spark)  # используется новая версия спарклайна
 
         box_bar = self._create_box(grid, "Столбчатая")
-        box_bar.grid(row=1, column=2, sticky="nsew", padx=6, pady=6)
+        box_bar.grid(row=1, column=1, sticky="nsew", padx=6, pady=6)
         self._mini_bar(box_bar)
 
         # Row 2: таблица статистики на всю ширину
         table_box = self._create_box(grid, "Статистика / Топ по категориям")
-        table_box.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=6, pady=6)
+        table_box.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
         self._mini_table(table_box)
 
-        # Конфигурация сетки
-        for c in range(3):
+        # Конфигурация сетки — равномерное распределение, без горизонтального скролла
+        for c in range(2):
             grid.columnconfigure(c, weight=1, uniform="col")
-        grid.rowconfigure(0, weight=0)
+        grid.rowconfigure(0, weight=1)
         grid.rowconfigure(1, weight=1)
         grid.rowconfigure(2, weight=0)
 
