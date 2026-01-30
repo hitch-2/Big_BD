@@ -5,7 +5,7 @@ import os
 import time
 
 CACHE_PATH = "cache/data_cache.pkl"
-CACHE_TTL_SECONDS = 300  # 5 минут, МЕНЯЕТЕ ЗДЕСЬ
+CACHE_TTL_SECONDS = 300  # МЕНЯЕТЕ ЗДЕСЬ (в секундах)
 
 
 class DataManager:
@@ -14,22 +14,41 @@ class DataManager:
         self.db_name = db_name
         self.collection_name = collection_name
 
+    # ---------- Mongo ----------
+
     def _connect(self):
-        client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=3000)
+        client = MongoClient(
+            self.mongo_uri,
+            tls=True,
+            tlsAllowInvalidCertificates=True,
+            serverSelectionTimeoutMS=3000,
+        )
+
+        # ВАЖНО: принудительная проверка соединения
+        client.admin.command("ping")
+
         db = client[self.db_name]
         return db[self.collection_name]
 
     def load_from_db(self):
         collection = self._connect()
         data = list(collection.find({}, {"_id": 0}))
+
+        if not data:
+            return pd.DataFrame()
+
         return pd.DataFrame(data)
 
-    def save_to_cache(self, df):
-        os.makedirs("cache", exist_ok=True)
+    # ---------- Cache ----------
+
+    def save_to_cache(self, df: pd.DataFrame):
+        os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+
         payload = {
             "timestamp": time.time(),
             "data": df
         }
+
         with open(CACHE_PATH, "wb") as f:
             pickle.dump(payload, f)
 
@@ -37,41 +56,49 @@ class DataManager:
         if not os.path.exists(CACHE_PATH):
             return None, None
 
-        with open(CACHE_PATH, "rb") as f:
-            payload = pickle.load(f)
+        try:
+            with open(CACHE_PATH, "rb") as f:
+                payload = pickle.load(f)
 
-        if isinstance(payload, dict):
-            return payload.get("data"), payload.get("timestamp")
-        else:
-            # Legacy format: just the DataFrame
+            if isinstance(payload, dict):
+                return payload.get("data"), payload.get("timestamp")
+
+            # старый формат
             return payload, None
+
+        except Exception:
+            return None, None
+
+    # ---------- Public ----------
 
     def get_data(self):
         cached_df, cached_time = self.load_from_cache()
 
-        # если кэша нет вообще
-        if cached_df is None:
-            try:
-                df = self.load_from_db()
-                self.save_to_cache(df)
-                return df
-            except Exception:
-                raise RuntimeError("Нет доступа к БД и отсутствует кэш")
+        # 1. Есть кэш и он свежий
+        if cached_df is not None and cached_time is not None:
+            age = time.time() - cached_time
+            if age < CACHE_TTL_SECONDS:
+                print("Загружены данные из кэша")
+                return cached_df
 
-        # если кэш есть — проверяем TTL
-        if cached_time is None:
-            cache_age = CACHE_TTL_SECONDS + 1  # Force reload for legacy cache
-        else:
-            cache_age = time.time() - cached_time
-        
-        if cache_age < CACHE_TTL_SECONDS:
-            return cached_df
-
-        # кэш устарел — пробуем обновить
+        # 2. Пытаемся обновить из БД
         try:
+            print("Пробую загрузить данные из БД...")
             df = self.load_from_db()
-            self.save_to_cache(df)
-            return df
-        except Exception:
-            print("БД недоступна, использую старые данные из кэша")
+
+            if not df.empty:
+                self.save_to_cache(df)
+                print("Данные загружены из БД и сохранены в кэш")
+                return df
+
+        except Exception as e:
+            print("БД недоступна:", e)
+
+        # 3. БД недоступна, но есть старый кэш
+        if cached_df is not None:
+            print("Использую старые данные из кэша")
             return cached_df
+
+        # 4. Совсем ничего нет — НЕ ПАДАЕМ
+        print("Нет доступа к БД и отсутствует кэш. Возвращаю пустые данные.")
+        return pd.DataFrame()

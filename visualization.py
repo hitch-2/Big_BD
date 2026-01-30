@@ -410,7 +410,7 @@ class App(tk.Tk):
 
 if __name__ == "__main__":
     manager = DataManager(
-        mongo_uri="mongodb+srv://abi:***@cluster0.gs3dt6o.mongodb.net/",
+        mongo_uri="mongodb+srv://abi:bkCVTo9fgYvhQN23@cluster0.gs3dt6o.mongodb.net/",
         db_name="analytics_db",
         collection_name="sales_data"
     )
