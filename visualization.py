@@ -233,27 +233,53 @@ class App(tk.Tk):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-        # Grid layout с 2 колонками
+        # Grid layout с 3 колонками, аккуратные размеры для фигур
         grid = ttk.Frame(scrollable_frame)
-        grid.pack(fill="both", expand=True, padx=10, pady=10)
+        grid.pack(fill="both", expand=True, padx=12, pady=12)
 
-        # Row 1
-        self._chart_box(grid, "Столбчатая", self._mini_bar, 0, 0)
-        self._chart_box(grid, "Линейный", self._mini_line, 0, 1)
+        # Row 0: большой тренд (слева, span 2) + круговая справа
+        left_big = self._create_box(grid, "Общий тренд")
+        left_big.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=6, pady=6)
+        fig_big = Figure(figsize=(10, 3), tight_layout=True)
+        ax_big = fig_big.add_subplot(111)
+        df_sorted = self.df.sort_values("date")
+        ax_big.plot(df_sorted["date"], df_sorted["value"], color="#4C8BF5")
+        ax_big.set_title("Общая динамика")
+        ax_big.tick_params(axis="x", labelrotation=25)
+        canvas_big = FigureCanvasTkAgg(fig_big, left_big)
+        canvas_big.get_tk_widget().pack(fill="both", expand=True)
 
-        # Row 2
-        self._chart_box(grid, "Спарклайн", self._mini_spark, 1, 0)
-        self._chart_box(grid, "Круговая", self._mini_pie, 1, 1)
+        right_pie = self._create_box(grid, "Распределение по категориям")
+        right_pie.grid(row=0, column=2, sticky="nsew", padx=6, pady=6)
+        fig_p = Figure(figsize=(3.5, 3), tight_layout=True)
+        ax_p = fig_p.add_subplot(111)
+        g = self.df.groupby("category")["value"].sum()
+        ax_p.pie(g.values, labels=g.index, autopct="%1.0f%%", textprops={"fontsize": 8})
+        canvas_p = FigureCanvasTkAgg(fig_p, right_pie)
+        canvas_p.get_tk_widget().pack(fill="both", expand=True)
 
-        # Row 3 - Table на всю ширину
-        table_box = self._create_box(grid, "Статистика")
-        table_box.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        # Row 1: три мини-графика
+        box_line = self._create_box(grid, "Линейный по категориям")
+        box_line.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
+        self._mini_line(box_line)
+
+        box_spark = self._create_box(grid, "Сравнение (спарклайн)")
+        box_spark.grid(row=1, column=1, sticky="nsew", padx=6, pady=6)
+        self._mini_spark(box_spark)  # используется новая версия спарклайна
+
+        box_bar = self._create_box(grid, "Столбчатая")
+        box_bar.grid(row=1, column=2, sticky="nsew", padx=6, pady=6)
+        self._mini_bar(box_bar)
+
+        # Row 2: таблица статистики на всю ширину
+        table_box = self._create_box(grid, "Статистика / Топ по категориям")
+        table_box.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=6, pady=6)
         self._mini_table(table_box)
 
         # Конфигурация сетки
-        grid.columnconfigure(0, weight=1)
-        grid.columnconfigure(1, weight=1)
-        grid.rowconfigure(0, weight=1)
+        for c in range(3):
+            grid.columnconfigure(c, weight=1, uniform="col")
+        grid.rowconfigure(0, weight=0)
         grid.rowconfigure(1, weight=1)
         grid.rowconfigure(2, weight=0)
 
@@ -292,26 +318,72 @@ class App(tk.Tk):
         canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _mini_spark(self, parent):
-        fig = Figure(figsize=(5, 2), tight_layout=True)
+        """
+        Обновлённый компактный спарклайн для дэшборда:
+        - два комбобокса для выбора категорий
+        - выравнивание по дате (merge) для корректного заполнения цветом
+        """
+        top = ttk.Frame(parent)
+        top.pack(fill="x", padx=2, pady=4)
+
+        categories = sorted(self.df["category"].unique())
+        cb1 = ttk.Combobox(top, values=categories, state="readonly", width=18)
+        cb2 = ttk.Combobox(top, values=categories, state="readonly", width=18)
+        cb1.pack(side="left", padx=(2, 6))
+        cb2.pack(side="left", padx=(2, 6))
+
+        fig = Figure(figsize=(4, 1.6), tight_layout=True)
         ax = fig.add_subplot(111)
-        ax.plot(self.df.sort_values("date")["value"], linewidth=1.5)
-        ax.set_title("Общий тренд")
-        ax.axis("off")
         canvas = FigureCanvasTkAgg(fig, parent)
         canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    def _mini_pie(self, parent):
-        fig = Figure(figsize=(4, 3), tight_layout=True)
-        ax = fig.add_subplot(111)
-        g = self.df.groupby("category")["value"].sum()
-        ax.pie(g.values, labels=g.index, autopct="%1.1f%%", textprops={"fontsize": 8})
-        ax.set_title("Распределение")
-        canvas = FigureCanvasTkAgg(fig, parent)
-        canvas.get_tk_widget().pack(fill="both", expand=True)
+        def redraw():
+            ax.clear()
+            a = cb1.get()
+            b = cb2.get()
+            if not a or not b:
+                canvas.draw()
+                return
+
+            d1 = self.df[self.df["category"] == a][["date", "value"]].sort_values("date")
+            d2 = self.df[self.df["category"] == b][["date", "value"]].sort_values("date")
+
+            # выравниваем по дате - outer merge и заполнение вперед/0
+            merged = pd.merge(d1, d2, on="date", how="outer", suffixes=("_a", "_b")).sort_values("date")
+            merged["value_a"] = merged["value_a"].ffill().fillna(0)
+            merged["value_b"] = merged["value_b"].ffill().fillna(0)
+
+            y1 = merged["value_a"].values
+            y2 = merged["value_b"].values
+            x = range(len(y1))
+
+            ax.plot(x, y1, color="#2E86AB", linewidth=1.4)
+            ax.plot(x, y2, color="#F39C12", linewidth=1.2, linestyle="--")
+
+            ax.fill_between(x, y1, y2, where=(y1 >= y2), color="#2ECC71", alpha=0.25, interpolate=True)
+            ax.fill_between(x, y1, y2, where=(y1 < y2), color="#E74C3C", alpha=0.25, interpolate=True)
+
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f"{a} vs {b}", fontsize=9)
+            canvas.draw()
+
+        # выставляем дефолтные значения и рисуем
+        if len(categories) >= 2:
+            cb1.set(categories[0])
+            cb2.set(categories[1])
+            redraw()
+
+        cb1.bind("<<ComboboxSelected>>", lambda e: redraw())
+        cb2.bind("<<ComboboxSelected>>", lambda e: redraw())
 
     def _mini_table(self, parent):
+        """
+        Компактная таблица: топ-10 категорий с суммой значений и общие метрики.
+        Сделана как Treeview, чтобы текст не обрезался и был выровнен.
+        """
         info_frame = ttk.Frame(parent)
-        info_frame.pack(fill="x", pady=5)
+        info_frame.pack(fill="x", padx=4, pady=(4, 8))
 
         stats = [
             f"Всего записей: {len(self.df)}",
@@ -321,7 +393,23 @@ class App(tk.Tk):
         ]
 
         for stat in stats:
-            ttk.Label(info_frame, text=stat, font=("Arial", 10)).pack(anchor="w", pady=2)
+            ttk.Label(info_frame, text=stat, font=("Arial", 9)).pack(side="left", padx=8)
+
+        # Treeview с топ-10 категорий
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill="both", expand=True, padx=4, pady=4)
+
+        tree = ttk.Treeview(tree_frame, columns=("category", "sum"), show="headings", height=6)
+        tree.heading("category", text="Категория")
+        tree.heading("sum", text="Сумма")
+        tree.column("category", anchor="w", width=300)
+        tree.column("sum", anchor="e", width=120)
+
+        grouped = self.df.groupby("category")["value"].sum().sort_values(ascending=False).head(10)
+        for cat, val in grouped.items():
+            tree.insert("", "end", values=(cat, f"{val:.2f}"))
+
+        tree.pack(fill="both", expand=True)
 
 
 if __name__ == "__main__":
