@@ -214,9 +214,9 @@ class App(tk.Tk):
         main_frame = ttk.Frame(self.container)
         main_frame.pack(fill="both", expand=True)
 
-        canvas = tk.Canvas(main_frame, highlightthickness=0)
+        canvas = tk.Canvas(main_frame, highlightthickness=0, bg="#f5f6f7")
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame = ttk.Frame(canvas, style="TFrame")
 
         scrollable_frame.bind(
             "<Configure>",
@@ -224,30 +224,49 @@ class App(tk.Tk):
         )
 
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.configure(yscrollcommand=scrollbar.set, bg="#f5f6f7")
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Binding mouse wheel
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-        def block(title):
-            box = ttk.LabelFrame(scrollable_frame, text=title)
-            box.pack(fill="x", padx=20, pady=15)
-            return box
+        # Grid layout с 2 колонками
+        grid = ttk.Frame(scrollable_frame)
+        grid.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self._mini_bar(block("Bar"))
-        self._mini_line(block("Line"))
-        self._mini_spark(block("Sparkline"))
-        self._mini_pie(block("Pie"))
-        self._mini_table(block("Table"))
+        # Row 1
+        self._chart_box(grid, "Столбчатая", self._mini_bar, 0, 0)
+        self._chart_box(grid, "Линейный", self._mini_line, 0, 1)
+
+        # Row 2
+        self._chart_box(grid, "Спарклайн", self._mini_spark, 1, 0)
+        self._chart_box(grid, "Круговая", self._mini_pie, 1, 1)
+
+        # Row 3 - Table на всю ширину
+        table_box = self._create_box(grid, "Статистика")
+        table_box.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        self._mini_table(table_box)
+
+        # Конфигурация сетки
+        grid.columnconfigure(0, weight=1)
+        grid.columnconfigure(1, weight=1)
+        grid.rowconfigure(0, weight=1)
+        grid.rowconfigure(1, weight=1)
+        grid.rowconfigure(2, weight=0)
 
         self.back_button()
 
-    # ---------------- HELPERS ----------------
+    def _chart_box(self, parent, title, func, row, col):
+        box = self._create_box(parent, title)
+        box.grid(row=row, column=col, sticky="nsew", padx=5, pady=5)
+        func(box)
+
+    def _create_box(self, parent, title):
+        box = ttk.LabelFrame(parent, text=title, padding=10)
+        return box
 
     def _draw(self, fig):
         canvas = FigureCanvasTkAgg(fig, self.container)
@@ -255,35 +274,54 @@ class App(tk.Tk):
         canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _mini_bar(self, parent):
-        fig = Figure(figsize=(5, 3))
+        fig = Figure(figsize=(5, 3), tight_layout=True)
         ax = fig.add_subplot(111)
         self.df.groupby("category")["value"].sum().plot(kind="bar", ax=ax)
-        FigureCanvasTkAgg(fig, parent).get_tk_widget().pack()
+        ax.set_title("По категориям")
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _mini_line(self, parent):
-        fig = Figure(figsize=(5, 3))
+        fig = Figure(figsize=(5, 3), tight_layout=True)
         ax = fig.add_subplot(111)
         for cat, d in self.df.groupby("category"):
-            ax.plot(d["date"], d["value"])
-        FigureCanvasTkAgg(fig, parent).get_tk_widget().pack()
+            ax.plot(d.sort_values("date")["date"], d["value"], label=cat)
+        ax.set_title("Временной ряд")
+        ax.legend(fontsize=8)
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _mini_spark(self, parent):
-        fig = Figure(figsize=(5, 2))
+        fig = Figure(figsize=(5, 2), tight_layout=True)
         ax = fig.add_subplot(111)
-        ax.plot(self.df.sort_values("date")["value"])
+        ax.plot(self.df.sort_values("date")["value"], linewidth=1.5)
+        ax.set_title("Общий тренд")
         ax.axis("off")
-        FigureCanvasTkAgg(fig, parent).get_tk_widget().pack()
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _mini_pie(self, parent):
-        fig = Figure(figsize=(4, 4))
+        fig = Figure(figsize=(4, 3), tight_layout=True)
         ax = fig.add_subplot(111)
         g = self.df.groupby("category")["value"].sum()
-        ax.pie(g.values)
-        FigureCanvasTkAgg(fig, parent).get_tk_widget().pack()
+        ax.pie(g.values, labels=g.index, autopct="%1.1f%%", textprops={"fontsize": 8})
+        ax.set_title("Распределение")
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def _mini_table(self, parent):
-        lbl = ttk.Label(parent, text=f"Всего записей: {len(self.df)}")
-        lbl.pack(pady=10)
+        info_frame = ttk.Frame(parent)
+        info_frame.pack(fill="x", pady=5)
+
+        stats = [
+            f"Всего записей: {len(self.df)}",
+            f"Дата от: {self.df['date'].min().date()}",
+            f"Дата до: {self.df['date'].max().date()}",
+            f"Категорий: {self.df['category'].nunique()}",
+        ]
+
+        for stat in stats:
+            ttk.Label(info_frame, text=stat, font=("Arial", 10)).pack(anchor="w", pady=2)
 
 
 if __name__ == "__main__":
